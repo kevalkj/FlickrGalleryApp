@@ -1,81 +1,100 @@
-/* eslint-disable prettier/prettier */
-// screens/HomeScreen.js
+/* eslint-disable react-native/no-inline-styles */
+/* eslint-disable no-unused-vars */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-catch-shadow */
+// /* eslint-disable prettier/prettier */
+
 import React, {useEffect, useState} from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  Image,
-  ActivityIndicator,
-  StyleSheet,
-} from 'react-native';
-import axios from 'axios';
+import {View, Text, FlatList, Image, ActivityIndicator} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
+import Snackbar from 'react-native-snackbar';
 
-const FLICKR_API_URL =
-  'https://api.flickr.com/services/rest/?method=flickr.photos.getRecent&per_page=20&page=1&api_key=6f102c62f41998d151e5a1b48713cf13&format=json&nojsoncallback=1&extras=url_s';
+const FLICKR_API_URL = 'https://api.flickr.com/services/rest/';
+const FLICKR_API_KEY = '6f102c62f41998d151e5a1b48713cf13';
 
-const HomeScreen = () => {
+export default function HomeScreen() {
   const [photos, setPhotos] = useState([]);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetchPhotos();
+    fetchRecentPhotos();
   }, []);
 
-  const fetchPhotos = async () => {
-    try {
-      const cachedPhotos = await AsyncStorage.getItem('photos');
-      if (cachedPhotos) {
-        setPhotos(JSON.parse(cachedPhotos));
-        setLoading(false);
-      }
+  useEffect(() => {
+    fetchRecentPhotos(page);
+  }, [page]);
 
-      const response = await axios.get(FLICKR_API_URL);
-      if (response.data.photos.photo.length > 0) {
-        setPhotos(response.data.photos.photo);
-        await AsyncStorage.setItem(
-          'photos',
-          JSON.stringify(response.data.photos.photo),
-        );
+  const fetchRecentPhotos = async (page = 1) => {
+    try {
+      setLoading(true);
+      const response = await axios.get(FLICKR_API_URL, {
+        params: {
+          method: 'flickr.photos.getRecent',
+          api_key: FLICKR_API_KEY,
+          format: 'json',
+          nojsoncallback: 1,
+          extras: 'url_s',
+          per_page: 30,
+          page,
+        },
+      });
+      const newPhotos = response.data.photos.photo;
+      if (page === 1) {
+        setPhotos(newPhotos);
+      } else {
+        setPhotos(prevPhotos => [...prevPhotos, ...newPhotos]);
       }
+      await AsyncStorage.setItem('cachedPhotos', JSON.stringify(newPhotos));
       setLoading(false);
     } catch (error) {
-      console.error(error);
       setLoading(false);
+      setError(true);
+      Snackbar.show({
+        text: 'Failed to load images. Retry?',
+        duration: Snackbar.LENGTH_INDEFINITE,
+        action: {
+          text: 'Retry',
+          onPress: () => fetchRecentPhotos(page),
+        },
+      });
+      const cachedPhotos = await AsyncStorage.getItem('cachedPhotos');
+      if (cachedPhotos) {
+        setPhotos(JSON.parse(cachedPhotos));
+      }
     }
   };
 
-  if (loading) {
-    return <ActivityIndicator size="large" color="#0000ff" />;
-  }
+  const handleEndReached = () => {
+    if (!loading) {
+      setPage(prevPage => prevPage + 1);
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        numColumns={2}
-        data={photos}
-        keyExtractor={item => item.id}
-        renderItem={({item}) => (
-          <Image source={{uri: item.url_s}} style={styles.image} />
-        )}
-      />
+    <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+      {loading && page === 1 ? (
+        <ActivityIndicator size="large" color="#0000ff" />
+      ) : (
+        <FlatList
+          numColumns={3}
+          data={photos}
+          keyExtractor={item => item.id}
+          renderItem={({item}) => (
+            <Image
+              source={{uri: item.url_s}}
+              style={{width: 100, height: 100, margin: 5}}
+            />
+          )}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            loading && <ActivityIndicator size="large" color="#0000ff" />
+          }
+        />
+      )}
     </View>
   );
-};
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  image: {
-    width: 150,
-    height: 150,
-    margin: 10,
-  },
-});
-
-export default HomeScreen;
+}
